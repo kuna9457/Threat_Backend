@@ -8,3 +8,4 @@ pymongo
 streamlit
 pydantic-settings
 python-dotenv
+gunicorn
