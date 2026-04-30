@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+requests
+aiohttp
+python-whois
+dnspython
+pymongo
+streamlit
+pydantic-settings
+python-dotenv
