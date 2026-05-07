@@ -6,6 +6,8 @@ from app.core.risk_engine import calculate_score
 from app.core.policy_engine import decide_verdict
 from app.services.urlscan_service import check_urlscan
 from app.services.abuseipdb_service import check_abuseipdb
+from app.services.ssl_labs_service import check_ssl_labs
+from app.services.mx_tools_service import check_mx_tools
 from app.db.mongo import collection
 from app.cache.memory_cache import get_cache, set_cache
 
@@ -32,6 +34,8 @@ def scan_url_service(url: str):
     domain_age = get_domain_age(url)
     urlscan_data = check_urlscan(url)
     abuseipdb_data = check_abuseipdb(url)
+    ssl_data = check_ssl_labs(url)
+    mx_data = check_mx_tools(url)
 
     # Build the data block — keep legacy keys for risk engine compatibility
     data = {
@@ -43,6 +47,9 @@ def scan_url_service(url: str):
         "virustotal": vt_data,
         "urlscan": urlscan_data,
         "abuseipdb": abuseipdb_data,
+        # New integrations
+        "ssl_labs": ssl_data,
+        "mx_tools": mx_data,
     }
 
     score = calculate_score(data)
@@ -66,3 +73,14 @@ def scan_url_service(url: str):
     # 5. Cache
     set_cache(url, result)
     return result
+
+
+def scan_urls_batch(urls: list[str]) -> list[dict]:
+    """Scan multiple URLs sequentially and return a list of results."""
+    results = []
+    for url in urls:
+        url = url.strip()
+        if url:
+            result = scan_url_service(url)
+            results.append(result)
+    return results
