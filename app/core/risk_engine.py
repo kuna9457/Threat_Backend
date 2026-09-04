@@ -57,12 +57,4 @@ def calculate_score(data: dict):
         if vulns.get("freak"):
             score += 10
 
-    # MX Tools — poor mail security is a weak signal
-    mx = data.get("mx_tools", {})
-    if "error" not in mx:
-        mail_sec = mx.get("mail_security", {})
-        mail_score = mail_sec.get("score", 100)
-        if mail_score < 25:
-            score += 5  # weak signal
-
     return min(score, 100)

@@ -1,6 +1,9 @@
 import requests
 from urllib.parse import urlparse
 from app.config import settings
+from app.utils.rate_limiter import RateLimiter
+
+_urlscan_limiter = RateLimiter(max_calls=settings.urlscan_rpm, period_seconds=60)
 
 def check_urlscan(url: str):
     if not settings.urlscan_api_key:
@@ -17,10 +20,11 @@ def check_urlscan(url: str):
     headers = {"API-Key": settings.urlscan_api_key}
     
     try:
+        _urlscan_limiter.acquire()
         response = requests.get(
             f"https://urlscan.io/api/v1/search/?q=domain:{domain}",
             headers=headers,
-            timeout=10
+            timeout=(5, 10)
         )
         if response.status_code == 200:
             data = response.json()

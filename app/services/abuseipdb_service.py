@@ -2,6 +2,9 @@ import socket
 import requests
 from urllib.parse import urlparse
 from app.config import settings
+from app.utils.rate_limiter import RateLimiter
+
+_abuseipdb_limiter = RateLimiter(max_calls=settings.abuseipdb_rpm, period_seconds=60)
 
 def check_abuseipdb(url: str):
     if not settings.abuseipdb_api_key:
@@ -26,6 +29,7 @@ def check_abuseipdb(url: str):
     }
     
     try:
+        _abuseipdb_limiter.acquire()
         response = requests.get(
             "https://api.abuseipdb.com/api/v2/check",
             params={"ipAddress": ip, "maxAgeInDays": 90},

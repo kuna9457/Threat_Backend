@@ -14,6 +14,10 @@ router = APIRouter()
 class BatchScanRequest(BaseModel):
     urls: List[str]
 
+class ReportRequest(BaseModel):
+    urls: List[str]
+    final_comment: str = ""
+
 
 @router.post("/scan-url")
 def scan_url(url: str = Query(..., description="The URL to scan for threats")):
@@ -40,14 +44,14 @@ def mx_check(url: str = Query(..., description="Domain or URL to check MX record
 
 
 @router.post("/report/pdf")
-def download_pdf_report(request: BatchScanRequest):
+def download_pdf_report(request: ReportRequest):
     """
     Generate a PDF report for one or more URLs.
     Accepts the same batch request body; scans (or fetches from cache)
     each URL, then builds a downloadable PDF.
     """
     results = scan_urls_batch(request.urls)
-    pdf_bytes = generate_pdf_report(results)
+    pdf_bytes = generate_pdf_report(results, request.final_comment)
 
     return StreamingResponse(
         io.BytesIO(pdf_bytes),

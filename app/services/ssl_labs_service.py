@@ -5,11 +5,19 @@ SSL/TLS configuration of a domain.
 Docs: https://github.com/ssllabs/ssllabs-scan/blob/master/ssllabs-api-docs-v3.md
 """
 
+import threading
 import time
 import requests
 from urllib.parse import urlparse
+from app.config import settings
 
 SSL_LABS_API = "https://api.ssllabs.com/api/v3"
+
+# Qualys doesn't publish a requests/minute quota — instead they ask clients not
+# to run many fresh assessments at once. This caps how many check_ssl_labs()
+# calls can be actively polling at the same time; extra calls queue on the
+# semaphore rather than piling on and getting the client IP throttled.
+_ssl_labs_semaphore = threading.Semaphore(settings.ssl_labs_max_concurrent)
 
 
 def _extract_domain(url: str) -> str:
@@ -29,6 +37,11 @@ def check_ssl_labs(url: str, max_wait: int = 180) -> dict:
     if not domain:
         return {"error": "Invalid URL — could not extract domain"}
 
+    with _ssl_labs_semaphore:
+        return _run_assessment(domain, max_wait)
+
+
+def _run_assessment(domain: str, max_wait: int) -> dict:
     try:
         # Start a new assessment (use cache if a recent one exists)
         params = {

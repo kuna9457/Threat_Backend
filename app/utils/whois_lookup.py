@@ -1,5 +1,14 @@
+import socket
 import whois
 from datetime import datetime
+
+# python-whois talks to WHOIS servers over raw sockets with no timeout param
+# of its own — a slow/unresponsive registrar (seen taking 13s+ on some ccTLDs)
+# would otherwise block indefinitely. This caps every socket the process
+# opens that doesn't set its own timeout (requests/dnspython calls elsewhere
+# already pass explicit timeouts, so they're unaffected).
+socket.setdefaulttimeout(8)
+
 
 def get_domain_age(url: str):
     """
