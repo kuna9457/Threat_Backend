@@ -55,12 +55,13 @@ def scan_url_service(url: str):
         "ssl_labs": ssl_data,
     }
 
-    score = calculate_score(data)
+    score, score_breakdown = calculate_score(data)
     verdict = decide_verdict(score)
 
     result = {
         "url": url,
         "score": score,
+        "score_breakdown": score_breakdown,
         "verdict": verdict,
         "data": data,
         "timestamp": datetime.now(timezone.utc).isoformat(),

@@ -10,3 +10,5 @@ python-dotenv
 gunicorn
 reportlab
 Pillow
+customtkinter
+darkdetect

@@ -132,7 +132,13 @@ def _make_wrapped_table(header: list[str], rows: list[list], col_widths: list) -
     ]))
     return t
 
-def generate_pdf_report(results: list, final_comment: str = "") -> bytes:
+def generate_pdf_report(
+    results: list, 
+    final_comment: str = "",
+    app_name: str | None = None,
+    can_id: str | None = None,
+    server_ip: str | None = None
+) -> bytes:
     pdf_buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         pdf_buffer,
@@ -200,6 +206,15 @@ def generate_pdf_report(results: list, final_comment: str = "") -> bytes:
     story.append(Paragraph("<b>Type of assessment:</b> URL Risk Assessment", body_style))
     story.append(Spacer(1, 10))
 
+    if app_name or can_id or server_ip:
+        story.append(Paragraph("Application Details:", heading_style))
+        app_rows = [["Detail", "Value"]]
+        if app_name: app_rows.append(["App Name", app_name])
+        if can_id: app_rows.append(["Can ID", can_id])
+        if server_ip: app_rows.append(["Server IP", server_ip])
+        story.append(_make_kv_table(app_rows))
+        story.append(Spacer(1, 15))
+
     story.append(Paragraph("Risk performed of what all URL:", heading_style))
     summary_data = [["SR. No.", "URL", "Risk level identified"]]
     for idx, res in enumerate(results, 1):
@@ -214,6 +229,29 @@ def generate_pdf_report(results: list, final_comment: str = "") -> bytes:
             risk_level
         ])
     story.append(_make_summary_table(summary_data))
+    
+    story.append(Spacer(1, 20))
+    story.append(Paragraph("Risk Score Calculation Logic", heading_style))
+    story.append(Paragraph("The overall risk score (capped at 100) is determined by aggregating points across the following criteria. A higher score indicates a higher risk level:", body_style))
+    
+    scoring_data = [
+        ["Google Safe Browsing", "Flagged as Phishing", "+100"],
+        ["Domain Age", "Less than 7 days", "+50"],
+        ["", "Less than 30 days", "+30"],
+        ["", "Less than 90 days", "+15"],
+        ["VirusTotal", "> 5 malicious engines", "+40"],
+        ["", "1-5 malicious engines", "+20"],
+        ["AbuseIPDB", "Abuse Confidence > 80%", "+40"],
+        ["", "Abuse Confidence > 40%", "+20"],
+        ["URLScan.io", "Flagged as Malicious", "+30"],
+        ["SSL Labs (Grade)", "Grade F or T", "+25"],
+        ["", "Grade D", "+15"],
+        ["", "Grade C", "+8"],
+        ["SSL Labs (Vulns)", "Heartbleed", "+15"],
+        ["", "POODLE / DROWN / FREAK", "+10 (each)"],
+    ]
+    
+    story.append(_make_wrapped_table(["Category", "Criteria", "Points Added"], scoring_data, [130, 200, 80]))
     
     # ── DETAILED RESULTS ───────────────────────────────────────────────────
     for idx, res in enumerate(results, 1):
@@ -236,23 +274,10 @@ def generate_pdf_report(results: list, final_comment: str = "") -> bytes:
             evidence = generate_evidence_screenshots(url, res)
         except Exception:
             evidence = {}
+            
+        breakdown = res.get("score_breakdown", {})
 
-        # Risk Overview
-        risk_data = [
-            ["Risk Score", "Verdict", "VT Malicious", "VT Suspicious", "Domain Age (days)", "Google Phishing"],
-            [
-                str(res.get("score", 0)),
-                res.get("verdict", "—"),
-                str(vt.get("malicious", 0)),
-                str(vt.get("suspicious", 0)),
-                str(data_block.get("domain_age", "—")),
-                "YES" if phishing else "No",
-            ],
-        ]
-        story.append(KeepTogether([
-            Paragraph("Risk Overview", subheading_style),
-            _make_table(risk_data),
-        ]))
+
 
         # ── Google Safe Browsing ─────────────────────────────────────────
         gsb_block = [Paragraph("Google Safe Browsing", subheading_style)]
@@ -273,6 +298,7 @@ def generate_pdf_report(results: list, final_comment: str = "") -> bytes:
 
         vt_rows = [
             ["Metric", "Value"],
+            ["Points Contributed", f"+{breakdown.get('VirusTotal', 0)} Points"],
             ["Malicious Engines", str(vt.get("malicious", 0))],
             ["Suspicious Engines", str(vt.get("suspicious", 0))],
             ["Harmless Engines", str(vt.get("harmless", 0))],
@@ -286,8 +312,6 @@ def generate_pdf_report(results: list, final_comment: str = "") -> bytes:
             ["Data Source", "Live VirusTotal API" if not vt.get("mock") else "Mock (no API key configured)"],
         ]
         vt_block.append(_make_kv_table(vt_rows))
-        if vt.get("error"):
-            vt_block.append(Paragraph(f"⚠ {_esc(vt['error'])} — the counts above reflect a failed/unchecked lookup, not a confirmed-clean result.", note_style))
         story.append(KeepTogether(vt_block))
 
         categories = vt.get("categories", {})
@@ -322,20 +346,12 @@ def generate_pdf_report(results: list, final_comment: str = "") -> bytes:
                 Paragraph(f"Per-Engine Results ({len(analysis_results)})", small_style),
                 _make_wrapped_table(["Engine", "Category", "Result", "Method"], eng_rows, [110, 65, 220, 70]),
             ]))
-        elif not vt.get("mock"):
-            story.append(Paragraph("No per-engine results returned by VirusTotal for this URL.", note_style))
-        else:
-            story.append(Paragraph("Per-engine results unavailable — VirusTotal is running in mock mode (no API key configured).", note_style))
 
         # ── URLScan.io ────────────────────────────────────────────────────
-        if not urlscan_data or "error" in urlscan_data:
-            story.append(KeepTogether([
-                Paragraph("URLScan.io Analysis", subheading_style),
-                Paragraph(f"Not available — {urlscan_data.get('error', 'no data returned')}.", note_style),
-            ]))
-        else:
+        if urlscan_data and "error" not in urlscan_data:
             us_rows = [
                 ["Metric", "Value"],
+                ["Points Contributed", f"+{breakdown.get('URLScan.io', 0)} Points"],
                 ["Malicious", "YES" if urlscan_data.get("malicious") else "No"],
                 ["Score", str(urlscan_data.get("score", 0))],
                 ["Total Scans", str(urlscan_data.get("total_scans", 0))],
@@ -349,18 +365,14 @@ def generate_pdf_report(results: list, final_comment: str = "") -> bytes:
             ]))
 
         # ── AbuseIPDB ─────────────────────────────────────────────────────
-        if not abuseipdb or "error" in abuseipdb:
-            story.append(KeepTogether([
-                Paragraph("AbuseIPDB Reputation Check", subheading_style),
-                Paragraph(f"Not available — {abuseipdb.get('error', 'no data returned') if abuseipdb else 'no data returned'}.", note_style),
-            ]))
-        else:
+        if abuseipdb and "error" not in abuseipdb:
             ab_block = [Paragraph("AbuseIPDB Reputation Check", subheading_style)]
             if "abuseipdb" in evidence:
                 ab_block.append(_make_rl_image(BytesIO(evidence["abuseipdb"]), target_width_mm=160))
                 ab_block.append(Spacer(1, 10))
             ab_rows = [
                 ["Metric", "Value"],
+                ["Points Contributed", f"+{breakdown.get('AbuseIPDB', 0)} Points"],
                 ["Abuse Confidence", f"{abuseipdb.get('abuseConfidenceScore', 0)}%"],
                 ["Total Reports", str(abuseipdb.get("totalReports", 0))],
                 ["Usage Type", str(abuseipdb.get("usageType", "Unknown"))],
@@ -371,12 +383,7 @@ def generate_pdf_report(results: list, final_comment: str = "") -> bytes:
             story.append(KeepTogether(ab_block))
 
         # ── SSL Labs ──────────────────────────────────────────────────────
-        if not ssl or "error" in ssl:
-            story.append(KeepTogether([
-                Paragraph("SSL / TLS Analysis (Qualys SSL Labs)", subheading_style),
-                Paragraph(f"Not available — {ssl.get('error', 'no data returned') if ssl else 'no data returned'}.", note_style),
-            ]))
-        else:
+        if ssl and "error" not in ssl:
             ssl_block = [Paragraph("SSL / TLS Analysis (Qualys SSL Labs)", subheading_style)]
             if "ssllabs" in evidence:
                 ssl_block.append(_make_rl_image(BytesIO(evidence["ssllabs"]), target_width_mm=160))
@@ -384,6 +391,7 @@ def generate_pdf_report(results: list, final_comment: str = "") -> bytes:
             hsts = ssl.get("hsts", {})
             ssl_rows = [
                 ["Metric", "Value"],
+                ["Points Contributed", f"+{breakdown.get('SSL Labs', 0)} Points"],
                 ["Grade", ssl.get("grade", "N/A")],
                 ["Server Name", ssl.get("server_name", "—") or "—"],
                 ["HSTS", str(hsts.get("status", "unknown")).title()],
@@ -427,19 +435,29 @@ def generate_pdf_report(results: list, final_comment: str = "") -> bytes:
                     _make_wrapped_table(["Check", "Status"], vuln_rows, [220, 220]),
                 ]))
 
-            ciphers = ssl.get("cipher_suites", [])
-            if ciphers:
-                cipher_rows = [[c.get("name", ""), str(c.get("cipher_strength", "")), c.get("kx_type", "")] for c in ciphers]
-                story.append(KeepTogether([
-                    Spacer(1, 6),
-                    Paragraph(f"Cipher Suites ({ssl.get('total_cipher_suites', len(ciphers))})", small_style),
-                    _make_wrapped_table(["Cipher Suite", "Strength (bits)", "Key Exchange"], cipher_rows, [280, 90, 90]),
-                ]))
-
     # ── LAST PAGE: COMMENTS ────────────────────────────────────────────────
     story.append(PageBreak())
     story.append(Paragraph("Assessment Comments", heading_style))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#F37224"), spaceAfter=15))
+
+    story.append(Paragraph("Consolidated Risk Overview", subheading_style))
+    consolidated_data = []
+    for res in results:
+        url = _trunc(res.get("url", ""), 50)
+        score = str(res.get("score", 0))
+        verdict = res.get("verdict", "—")
+        bd = res.get("score_breakdown", {})
+        bd_str = "<br/>".join([f"{k}: +{v}" for k, v in bd.items()]) if bd else "None"
+        
+        consolidated_data.append([url, score, verdict, bd_str])
+        
+    if consolidated_data:
+        story.append(_make_wrapped_table(
+            ["URL", "Risk Score", "Verdict", "Score Breakdown"], 
+            consolidated_data, 
+            [150, 60, 60, 200]
+        ))
+        story.append(Spacer(1, 15))
 
     story.append(Paragraph("Final Assessment Comment:", subheading_style))
     if final_comment.strip():

@@ -17,6 +17,9 @@ class BatchScanRequest(BaseModel):
 class ReportRequest(BaseModel):
     urls: List[str]
     final_comment: str = ""
+    app_name: str | None = None
+    can_id: str | None = None
+    server_ip: str | None = None
 
 
 @router.post("/scan-url")
@@ -51,7 +54,13 @@ def download_pdf_report(request: ReportRequest):
     each URL, then builds a downloadable PDF.
     """
     results = scan_urls_batch(request.urls)
-    pdf_bytes = generate_pdf_report(results, request.final_comment)
+    pdf_bytes = generate_pdf_report(
+        results, 
+        request.final_comment,
+        request.app_name,
+        request.can_id,
+        request.server_ip
+    )
 
     return StreamingResponse(
         io.BytesIO(pdf_bytes),

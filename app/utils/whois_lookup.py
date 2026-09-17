@@ -24,6 +24,9 @@ def get_domain_age(url: str):
             creation_date = creation_date[0]
             
         if creation_date:
+            # Strip timezone info to avoid TypeError when subtracting from naive datetime.now()
+            if hasattr(creation_date, 'tzinfo') and creation_date.tzinfo is not None:
+                creation_date = creation_date.replace(tzinfo=None)
             age = (datetime.now() - creation_date).days
             return age
         return 3650 # Default 10 years if unknown
