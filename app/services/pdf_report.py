@@ -15,6 +15,52 @@ from reportlab.platypus.flowables import HRFlowable
 from PIL import Image as PILImage
 from app.services.evidence_screenshots import generate_evidence_screenshots
 
+# ── WelthWest Brand ──────────────────────────────────────────────────────────
+WW_NAVY = colors.HexColor("#0A1930")
+WW_TEAL = colors.HexColor("#0FA593")  # slightly deepened for print contrast
+WW_LOGO_PATH = os.path.join(os.path.dirname(__file__), "welthwest_logo.png")
+
+
+def _header_footer(canvas, doc):
+    """Draws the WelthWest brand strip (logo + name) and footer on every page."""
+    canvas.saveState()
+    width, height = A4
+
+    # Header logo + wordmark
+    try:
+        canvas.drawImage(
+            WW_LOGO_PATH, 20 * mm, height - 18 * mm,
+            width=9 * mm, height=9 * mm, mask="auto", preserveAspectRatio=True,
+        )
+    except Exception:
+        pass
+    canvas.setFont("Helvetica-Bold", 10)
+    canvas.setFillColor(WW_NAVY)
+    canvas.drawString(31 * mm, height - 13 * mm, "WelthWest")
+    canvas.setFont("Helvetica", 7)
+    canvas.setFillColor(colors.HexColor("#64748B"))
+    canvas.drawString(31 * mm, height - 17 * mm, "Cyber Threat Intelligence Platform")
+
+    canvas.setFont("Helvetica-Bold", 7)
+    canvas.setFillColor(colors.HexColor("#94A3B8"))
+    canvas.drawRightString(width - 20 * mm, height - 13 * mm, "CONFIDENTIAL")
+
+    canvas.setStrokeColor(WW_TEAL)
+    canvas.setLineWidth(0.8)
+    canvas.line(20 * mm, height - 20 * mm, width - 20 * mm, height - 20 * mm)
+
+    # Footer
+    canvas.setStrokeColor(colors.HexColor("#E2E8F0"))
+    canvas.setLineWidth(0.5)
+    canvas.line(20 * mm, 16 * mm, width - 20 * mm, 16 * mm)
+    canvas.setFont("Helvetica", 7)
+    canvas.setFillColor(colors.HexColor("#94A3B8"))
+    canvas.drawString(20 * mm, 11 * mm, "WelthWest — Confidential, For Internal Use Only")
+    canvas.drawCentredString(width / 2, 11 * mm, f"Page {doc.page}")
+    canvas.drawRightString(width - 20 * mm, 11 * mm, datetime.utcnow().strftime("%Y-%m-%d"))
+
+    canvas.restoreState()
+
 def _make_rl_image(img_buffer, target_width_mm):
     img_buffer.seek(0)
     with PILImage.open(img_buffer) as pil_img:
@@ -51,7 +97,7 @@ def _make_summary_table(data: list[list[str]]) -> Table:
     level text for row i."""
     t = Table(data, colWidths=[20*mm, 110*mm, 40*mm], hAlign="LEFT", repeatRows=1)
     style = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1C3E73")),
+        ("BACKGROUND", (0, 0), (-1, 0), WW_NAVY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, 0), 10),
@@ -77,7 +123,7 @@ def _make_summary_table(data: list[list[str]]) -> Table:
 def _make_table(data: list[list[str]]) -> Table:
     t = Table(data, hAlign="LEFT", repeatRows=1)
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1C3E73")),
+        ("BACKGROUND", (0, 0), (-1, 0), WW_NAVY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, 0), 8),
@@ -94,7 +140,7 @@ def _make_table(data: list[list[str]]) -> Table:
 def _make_kv_table(data: list[list[str]]) -> Table:
     t = Table(data, colWidths=[150, 310], hAlign="LEFT", repeatRows=1)
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1C3E73")),
+        ("BACKGROUND", (0, 0), (-1, 0), WW_NAVY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, 0), 8),
@@ -122,7 +168,7 @@ def _make_wrapped_table(header: list[str], rows: list[list], col_widths: list) -
         data.append([_P(_esc(v), cell_style) for v in row])
     t = Table(data, colWidths=col_widths, hAlign="LEFT", repeatRows=1)
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1C3E73")),
+        ("BACKGROUND", (0, 0), (-1, 0), WW_NAVY),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d7de")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f6f8fa")]),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -145,7 +191,7 @@ def generate_pdf_report(
         pagesize=A4,
         rightMargin=20 * mm,
         leftMargin=20 * mm,
-        topMargin=20 * mm,
+        topMargin=28 * mm,
         bottomMargin=20 * mm,
     )
     styles = getSampleStyleSheet()
@@ -153,7 +199,11 @@ def generate_pdf_report(
     # Custom Styles
     cover_bank = ParagraphStyle(
         "CoverBank", parent=styles["Title"],
-        fontSize=30, fontName="Helvetica-Bold", alignment=1, spaceAfter=10, textColor=colors.HexColor("#1C3E73")
+        fontSize=30, fontName="Helvetica-Bold", alignment=1, spaceAfter=4, textColor=WW_NAVY
+    )
+    cover_subtitle = ParagraphStyle(
+        "CoverSubtitle", parent=styles["Normal"],
+        fontSize=11, fontName="Helvetica", alignment=1, spaceAfter=20, textColor=colors.HexColor("#64748B")
     )
     cover_title = ParagraphStyle(
         "CoverTitle", parent=styles["Title"],
@@ -161,11 +211,11 @@ def generate_pdf_report(
     )
     heading_style = ParagraphStyle(
         "Heading", parent=styles["Heading2"],
-        fontSize=13, fontName="Helvetica-Bold", spaceBefore=14, spaceAfter=8, textColor=colors.HexColor("#1C3E73")
+        fontSize=13, fontName="Helvetica-Bold", spaceBefore=14, spaceAfter=8, textColor=WW_NAVY
     )
     subheading_style = ParagraphStyle(
         "SubHeading", parent=styles["Heading3"],
-        fontSize=11, fontName="Helvetica-Bold", spaceBefore=12, spaceAfter=6, textColor=colors.HexColor("#F37224")
+        fontSize=11, fontName="Helvetica-Bold", spaceBefore=12, spaceAfter=6, textColor=WW_TEAL
     )
     from reportlab.lib.enums import TA_JUSTIFY
     body_style = ParagraphStyle(
@@ -184,19 +234,22 @@ def generate_pdf_report(
     story = []
 
     # ── PAGE 1: COVER ──────────────────────────────────────────────────────
-    story.append(Spacer(1, 40 * mm))
-    
-    # Load transparent ICICI Logo
+    story.append(Spacer(1, 30 * mm))
+
+    # WelthWest company logo
     try:
-        logo_path = os.path.join(os.path.dirname(__file__), 'icici_logo_transparent.png')
-        with open(logo_path, 'rb') as f:
+        with open(WW_LOGO_PATH, 'rb') as f:
             logo_data = f.read()
-        story.append(_make_rl_image(BytesIO(logo_data), target_width_mm=60))
+        logo_img = _make_rl_image(BytesIO(logo_data), target_width_mm=42)
+        logo_img.hAlign = "CENTER"
+        story.append(logo_img)
     except Exception:
-        story.append(Paragraph("[ICICI BANK LOGO]", cover_bank))
-    
-    story.append(Spacer(1, 10 * mm))
-    story.append(Paragraph("ICICI BANK LIMITED", cover_bank))
+        story.append(Paragraph("[WELTHWEST LOGO]", cover_bank))
+
+    story.append(Spacer(1, 8 * mm))
+    story.append(Paragraph("WELTHWEST", cover_bank))
+    story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph("Cyber Threat Intelligence Platform", cover_subtitle))
     story.append(Paragraph("URL Risk Assessment", cover_title))
     story.append(PageBreak())
 
@@ -267,7 +320,7 @@ def generate_pdf_report(
 
         # URL Header
         story.append(Paragraph(f"<b>{idx} — {_esc(_trunc(url, 65))}</b>", heading_style))
-        story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#F37224"), spaceAfter=10))
+        story.append(HRFlowable(width="100%", thickness=1, color=WW_TEAL, spaceAfter=10))
 
         # Generate Evidence
         try:
@@ -438,7 +491,7 @@ def generate_pdf_report(
     # ── LAST PAGE: COMMENTS ────────────────────────────────────────────────
     story.append(PageBreak())
     story.append(Paragraph("Assessment Comments", heading_style))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#F37224"), spaceAfter=15))
+    story.append(HRFlowable(width="100%", thickness=1, color=WW_TEAL, spaceAfter=15))
 
     story.append(Paragraph("Consolidated Risk Overview", subheading_style))
     consolidated_data = []
@@ -465,5 +518,5 @@ def generate_pdf_report(
     else:
         story.append(Paragraph("<i>No final comment provided.</i>", body_style))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=_header_footer, onLaterPages=_header_footer)
     return pdf_buffer.getvalue()

@@ -8,7 +8,7 @@ replicas of:
   • SSL Labs Certificate Report
   • AbuseIPDB Reputation Report
 
-These images are embedded in the ICICI Bank PDF report as tamper-proof visual
+These images are embedded in the WelthWest PDF report as tamper-proof visual
 evidence. Rendered entirely from API data — no web scraping involved.
 ─────────────────────────────────────────────────────────────────────────────
 """
