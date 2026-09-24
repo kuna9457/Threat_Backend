@@ -42,6 +42,7 @@ def main():
     app_name_input = input("Application Name: ").strip()
     can_id_input = input("CAN ID: ").strip()
     server_ip_input = input("Server IP: ").strip()
+    request_id_input = input("Request ID (comma-separated SNs): ").strip()
     comment_input = input("Final Assessment Comment: ").strip()
     print("----------------------\n")
 
@@ -51,6 +52,7 @@ def main():
     app_name = parse_input(app_name_input)
     can_id = parse_input(can_id_input)
     server_ip = parse_input(server_ip_input)
+    request_id = parse_input(request_id_input)
     final_comment = parse_input(comment_input) or ""
 
     print(f"[*] Loaded {len(urls)} URL(s) to scan.")
@@ -72,7 +74,8 @@ def main():
             final_comment=final_comment,
             app_name=app_name,
             can_id=can_id,
-            server_ip=server_ip
+            server_ip=server_ip,
+            request_id=request_id
         )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

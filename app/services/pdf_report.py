@@ -85,10 +85,38 @@ def _epoch_to_str(epoch_ms) -> str:
         pass
     return str(epoch_ms)
 
+def _risk_assessment_summary(results: list) -> str:
+    """
+    Auto-generated summary sentence.
+    - "As per Risk Assessment, 1 low found among total 5 URL."
+    - "As per Risk Assessment, 2 low and 4 medium found among total 6 URL."
+    - "As per Risk Assessment, no risk found among total 5 URL." (nothing found)
+    Only counts Low/Medium/High — "No Risk" URLs aren't a finding worth
+    calling out here, and are only implied by omission.
+    """
+    order = ["Low", "Medium", "High"]
+    counts = {lvl: 0 for lvl in order}
+    for res in results:
+        lvl = res.get("final_risk_level")
+        if lvl in counts:
+            counts[lvl] += 1
+
+    parts = [f"{counts[lvl]} {lvl.lower()}" for lvl in order if counts[lvl] > 0]
+    total = len(results)
+
+    if not parts:
+        return f"As per Risk Assessment, no risk found among total {total} URL."
+
+    joined = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    return f"As per Risk Assessment, {joined} found among total {total} URL."
+
+
 _RISK_COLORS = {
     "High": colors.HexColor("#DC2626"),
     "Medium": colors.HexColor("#D97706"),
-    "Low": colors.HexColor("#059669"),
+    "Low": colors.HexColor("#2563EB"),
+    "No Risk": colors.HexColor("#059669"),
+    "Unknown": colors.HexColor("#6B7280"),
 }
 
 def _make_summary_table(data: list[list[str]]) -> Table:
@@ -179,11 +207,12 @@ def _make_wrapped_table(header: list[str], rows: list[list], col_widths: list) -
     return t
 
 def generate_pdf_report(
-    results: list, 
+    results: list,
     final_comment: str = "",
     app_name: str | None = None,
     can_id: str | None = None,
-    server_ip: str | None = None
+    server_ip: str | None = None,
+    request_id: str | None = None
 ) -> bytes:
     pdf_buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -259,53 +288,36 @@ def generate_pdf_report(
     story.append(Paragraph("<b>Type of assessment:</b> URL Risk Assessment", body_style))
     story.append(Spacer(1, 10))
 
-    if app_name or can_id or server_ip:
+    if app_name or can_id or server_ip or request_id:
         story.append(Paragraph("Application Details:", heading_style))
         app_rows = [["Detail", "Value"]]
         if app_name: app_rows.append(["App Name", app_name])
         if can_id: app_rows.append(["Can ID", can_id])
         if server_ip: app_rows.append(["Server IP", server_ip])
+        if request_id: app_rows.append(["Request Id", request_id])
         story.append(_make_kv_table(app_rows))
         story.append(Spacer(1, 15))
 
     story.append(Paragraph("Risk performed of what all URL:", heading_style))
-    summary_data = [["SR. No.", "URL", "Risk level identified"]]
+    summary_header_style = ParagraphStyle(
+        "SumHead", parent=styles["Normal"], fontSize=10, leading=12,
+        fontName="Helvetica-Bold", textColor=colors.white
+    )
+    summary_cell_style = ParagraphStyle(
+        "SumCell", parent=styles["Normal"], fontSize=10, leading=12,
+        textColor=colors.HexColor("#1D4ED8"), wordWrap="CJK"
+    )
+    summary_data = [[Paragraph(h, summary_header_style) for h in ["SR. No.", "URL", "Final Risk Level"]]]
     for idx, res in enumerate(results, 1):
-        score = res.get("score", 0)
-        if score >= 60: risk_level = "High"
-        elif score >= 30: risk_level = "Medium"
-        else: risk_level = "Low"
+        risk_level = res.get("final_risk_level", "Unknown")
 
         summary_data.append([
             str(idx),
-            _trunc(res.get("url", ""), 55),
+            Paragraph(_esc(res.get("url", "")), summary_cell_style),
             risk_level
         ])
     story.append(_make_summary_table(summary_data))
-    
-    story.append(Spacer(1, 20))
-    story.append(Paragraph("Risk Score Calculation Logic", heading_style))
-    story.append(Paragraph("The overall risk score (capped at 100) is determined by aggregating points across the following criteria. A higher score indicates a higher risk level:", body_style))
-    
-    scoring_data = [
-        ["Google Safe Browsing", "Flagged as Phishing", "+100"],
-        ["Domain Age", "Less than 7 days", "+50"],
-        ["", "Less than 30 days", "+30"],
-        ["", "Less than 90 days", "+15"],
-        ["VirusTotal", "> 5 malicious engines", "+40"],
-        ["", "1-5 malicious engines", "+20"],
-        ["AbuseIPDB", "Abuse Confidence > 80%", "+40"],
-        ["", "Abuse Confidence > 40%", "+20"],
-        ["URLScan.io", "Flagged as Malicious", "+30"],
-        ["SSL Labs (Grade)", "Grade F or T", "+25"],
-        ["", "Grade D", "+15"],
-        ["", "Grade C", "+8"],
-        ["SSL Labs (Vulns)", "Heartbleed", "+15"],
-        ["", "POODLE / DROWN / FREAK", "+10 (each)"],
-    ]
-    
-    story.append(_make_wrapped_table(["Category", "Criteria", "Points Added"], scoring_data, [130, 200, 80]))
-    
+
     # ── DETAILED RESULTS ───────────────────────────────────────────────────
     for idx, res in enumerate(results, 1):
         story.append(PageBreak())
@@ -313,10 +325,8 @@ def generate_pdf_report(
         url = res.get("url", "")
         data_block = res.get("data", {})
         vt = data_block.get("virustotal", {})
-        urlscan_data = data_block.get("urlscan", {})
         abuseipdb = data_block.get("abuseipdb", {})
-        ssl = data_block.get("ssl_labs", {})
-        phishing = data_block.get("phishing", False)
+        sslyze = data_block.get("sslyze", {})
 
         # URL Header
         story.append(Paragraph(f"<b>{idx} — {_esc(_trunc(url, 65))}</b>", heading_style))
@@ -327,21 +337,25 @@ def generate_pdf_report(
             evidence = generate_evidence_screenshots(url, res)
         except Exception:
             evidence = {}
-            
-        breakdown = res.get("score_breakdown", {})
 
+        risk_sources = res.get("risk_sources", {})
+        final_level = res.get("final_risk_level", "Unknown")
+        remarks = res.get("risk_remarks", "")
 
+        def _src_level(name):
+            s = risk_sources.get(name, {})
+            level = s.get("level")
+            detail = _trunc(s.get("detail", ""), 150)
+            if level:
+                return f"{level} ({detail})" if detail else level
+            return f"Not usable — {detail}" if detail else "Not usable"
 
-        # ── Google Safe Browsing ─────────────────────────────────────────
-        gsb_block = [Paragraph("Google Safe Browsing", subheading_style)]
-        if "google_safe_browsing" in evidence:
-            gsb_block.append(_make_rl_image(BytesIO(evidence["google_safe_browsing"]), target_width_mm=160))
-            gsb_block.append(Spacer(1, 10))
-        gsb_block.append(_make_kv_table([
+        story.append(_make_kv_table([
             ["Metric", "Value"],
-            ["Phishing Status", "⚠ Flagged as phishing" if phishing else "Not flagged"],
+            ["Final Risk Level", final_level],
+            ["Basis", _trunc(remarks, 300) if remarks else "—"],
         ]))
-        story.append(KeepTogether(gsb_block))
+        story.append(Spacer(1, 8))
 
         # ── VirusTotal ────────────────────────────────────────────────────
         vt_block = [Paragraph("VirusTotal Multi-Engine Analysis", subheading_style)]
@@ -351,7 +365,7 @@ def generate_pdf_report(
 
         vt_rows = [
             ["Metric", "Value"],
-            ["Points Contributed", f"+{breakdown.get('VirusTotal', 0)} Points"],
+            ["Risk Level", _src_level("VirusTotal")],
             ["Malicious Engines", str(vt.get("malicious", 0))],
             ["Suspicious Engines", str(vt.get("suspicious", 0))],
             ["Harmless Engines", str(vt.get("harmless", 0))],
@@ -400,23 +414,6 @@ def generate_pdf_report(
                 _make_wrapped_table(["Engine", "Category", "Result", "Method"], eng_rows, [110, 65, 220, 70]),
             ]))
 
-        # ── URLScan.io ────────────────────────────────────────────────────
-        if urlscan_data and "error" not in urlscan_data:
-            us_rows = [
-                ["Metric", "Value"],
-                ["Points Contributed", f"+{breakdown.get('URLScan.io', 0)} Points"],
-                ["Malicious", "YES" if urlscan_data.get("malicious") else "No"],
-                ["Score", str(urlscan_data.get("score", 0))],
-                ["Total Scans", str(urlscan_data.get("total_scans", 0))],
-                ["Country", str(urlscan_data.get("country", "Unknown"))],
-                ["Server", str(urlscan_data.get("server", "Unknown"))],
-                ["Report URL", _trunc(str(urlscan_data.get("report_url", "—")), 65)],
-            ]
-            story.append(KeepTogether([
-                Paragraph("URLScan.io Analysis", subheading_style),
-                _make_kv_table(us_rows),
-            ]))
-
         # ── AbuseIPDB ─────────────────────────────────────────────────────
         if abuseipdb and "error" not in abuseipdb:
             ab_block = [Paragraph("AbuseIPDB Reputation Check", subheading_style)]
@@ -425,7 +422,7 @@ def generate_pdf_report(
                 ab_block.append(Spacer(1, 10))
             ab_rows = [
                 ["Metric", "Value"],
-                ["Points Contributed", f"+{breakdown.get('AbuseIPDB', 0)} Points"],
+                ["Risk Level", _src_level("AbuseIPDB")],
                 ["Abuse Confidence", f"{abuseipdb.get('abuseConfidenceScore', 0)}%"],
                 ["Total Reports", str(abuseipdb.get("totalReports", 0))],
                 ["Usage Type", str(abuseipdb.get("usageType", "Unknown"))],
@@ -435,58 +432,41 @@ def generate_pdf_report(
             ab_block.append(_make_kv_table(ab_rows))
             story.append(KeepTogether(ab_block))
 
-        # ── SSL Labs ──────────────────────────────────────────────────────
-        if ssl and "error" not in ssl:
-            ssl_block = [Paragraph("SSL / TLS Analysis (Qualys SSL Labs)", subheading_style)]
-            if "ssllabs" in evidence:
-                ssl_block.append(_make_rl_image(BytesIO(evidence["ssllabs"]), target_width_mm=160))
-                ssl_block.append(Spacer(1, 10))
-            hsts = ssl.get("hsts", {})
-            ssl_rows = [
-                ["Metric", "Value"],
-                ["Points Contributed", f"+{breakdown.get('SSL Labs', 0)} Points"],
-                ["Grade", ssl.get("grade", "N/A")],
-                ["Server Name", ssl.get("server_name", "—") or "—"],
-                ["HSTS", str(hsts.get("status", "unknown")).title()],
-                ["OCSP Stapling", "Yes" if ssl.get("ocsp_stapling") else "No"],
-            ]
-            cert = ssl.get("certificate", {})
-            if cert:
-                ssl_rows += [
-                    ["Cert Subject", _trunc(cert.get("subject", "—"), 55)],
-                    ["Cert Issuer", _trunc(cert.get("issuer", "—"), 55)],
-                    ["Key Algorithm", f"{cert.get('key_alg','—')} ({cert.get('key_size','—')} bit)"],
-                    ["Valid Until", _epoch_to_str(cert.get("not_after"))],
-                ]
-            ssl_block.append(_make_kv_table(ssl_rows))
+        # ── SSLyze ────────────────────────────────────────────────────────
+        if sslyze:
+            ssl_block = [Paragraph("SSLyze — TLS/SSL Protocol Analysis", subheading_style)]
+            if sslyze.get("error"):
+                ssl_block.append(_make_kv_table([
+                    ["Metric", "Value"],
+                    ["Risk Level", _src_level("SSLyze")],
+                    ["Error", sslyze["error"]],
+                ]))
+            else:
+                protocols = sslyze.get("protocols", [])
+                ssl_block.append(_make_kv_table([
+                    ["Metric", "Value"],
+                    ["Risk Level", _src_level("SSLyze")],
+                    ["Host", sslyze.get("host", "—")],
+                    ["Port", str(sslyze.get("port", 443))],
+                    ["Accepted Protocols", ", ".join(f"{p.get('name')} {p.get('version')}" for p in protocols) or "None detected"],
+                ]))
             story.append(KeepTogether(ssl_block))
 
-            protocols = ssl.get("protocols", [])
-            if protocols:
-                proto_rows = [[p.get("name", ""), p.get("version", "")] for p in protocols]
-                story.append(KeepTogether([
-                    Spacer(1, 6),
-                    Paragraph(f"Supported Protocols ({len(protocols)})", small_style),
-                    _make_wrapped_table(["Protocol", "Version"], proto_rows, [220, 220]),
-                ]))
-
-            vulns = ssl.get("vulnerabilities", {})
-            if vulns:
-                vuln_rows = []
-                for k, v in vulns.items():
-                    label = k.replace("_", " ").title()
-                    if isinstance(v, bool):
-                        status = "VULNERABLE" if v else "Safe"
-                    elif isinstance(v, int):
-                        status = "Safe" if v <= 1 else "VULNERABLE"
-                    else:
-                        status = str(v)
-                    vuln_rows.append([label, status])
-                story.append(KeepTogether([
-                    Spacer(1, 6),
-                    Paragraph("Vulnerability Checks", small_style),
-                    _make_wrapped_table(["Check", "Status"], vuln_rows, [220, 220]),
-                ]))
+        # ── WHOIS ─────────────────────────────────────────────────────────
+        # Only shown when WHOIS actually returned a usable domain age —
+        # failed/unknown lookups (and bare-IP skips) are left out of the
+        # report entirely rather than shown as an error row.
+        whois_info = data_block.get("whois", {})
+        if risk_sources.get("WHOIS", {}).get("usable"):
+            whois_block = [
+                Paragraph("WHOIS — Domain Age", subheading_style),
+                _make_kv_table([
+                    ["Metric", "Value"],
+                    ["Risk Level", _src_level("WHOIS")],
+                    ["Domain Age", f"{whois_info.get('age_days')} days"],
+                ]),
+            ]
+            story.append(KeepTogether(whois_block))
 
     # ── LAST PAGE: COMMENTS ────────────────────────────────────────────────
     story.append(PageBreak())
@@ -494,29 +474,75 @@ def generate_pdf_report(
     story.append(HRFlowable(width="100%", thickness=1, color=WW_TEAL, spaceAfter=15))
 
     story.append(Paragraph("Consolidated Risk Overview", subheading_style))
-    consolidated_data = []
+    cons_head_style = ParagraphStyle("ConsHead", parent=styles["Normal"], fontSize=7, leading=9,
+                                      fontName="Helvetica-Bold", textColor=colors.white)
+    cons_url_style = ParagraphStyle("ConsUrl", parent=styles["Normal"], fontSize=7, leading=9, wordWrap="CJK")
+    cons_cell_style = ParagraphStyle("ConsCell", parent=styles["Normal"], fontSize=7, leading=9)
+
+    consolidated_data = [[Paragraph(h, cons_head_style) for h in ["URL", "Final Risk Level", "Per-Source Risk Level"]]]
     for res in results:
-        url = _trunc(res.get("url", ""), 50)
-        score = str(res.get("score", 0))
-        verdict = res.get("verdict", "—")
-        bd = res.get("score_breakdown", {})
-        bd_str = "<br/>".join([f"{k}: +{v}" for k, v in bd.items()]) if bd else "None"
-        
-        consolidated_data.append([url, score, verdict, bd_str])
-        
-    if consolidated_data:
-        story.append(_make_wrapped_table(
-            ["URL", "Risk Score", "Verdict", "Score Breakdown"], 
-            consolidated_data, 
-            [150, 60, 60, 200]
-        ))
+        url = res.get("url", "")
+        final_level = res.get("final_risk_level", "Unknown")
+        rs = res.get("risk_sources", {})
+        per_source = ", ".join(
+            f"{name}: {s.get('level') or 'N/A'}" for name, s in rs.items()
+        ) if rs else "None"
+
+        consolidated_data.append([
+            Paragraph(_esc(url), cons_url_style),
+            Paragraph(_esc(final_level), cons_cell_style),
+            Paragraph(_esc(per_source), cons_cell_style),
+        ])
+
+    if len(consolidated_data) > 1:
+        cons_table = Table(consolidated_data, colWidths=[130, 80, 260], hAlign="LEFT", repeatRows=1)
+        cons_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1C3E73")),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d7de")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f6f8fa")]),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(cons_table)
         story.append(Spacer(1, 15))
 
     story.append(Paragraph("Final Assessment Comment:", subheading_style))
+    story.append(Paragraph(_esc(_risk_assessment_summary(results)), body_style))
     if final_comment.strip():
         story.append(Paragraph(_esc(final_comment), body_style))
-    else:
-        story.append(Paragraph("<i>No final comment provided.</i>", body_style))
+
+    # ── LAST PAGE: RISK SCORING METHODOLOGY ─────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph("Risk Scoring Methodology", heading_style))
+    story.append(Paragraph(
+        "Each source below is independently classified as No Risk, Low, Medium or High. "
+        "The Final Risk Level for a URL is the single worst (highest-severity) result among "
+        "every source that returned a usable value for it. \"Unknown\" is shown only when none "
+        "of the four sources returned a usable result (e.g. every lookup errored or the target "
+        "could not be reached). Google Safe Browsing and URLScan.io results are still collected "
+        "as supporting evidence but are not part of this risk calculation.",
+        body_style
+    ))
+
+    scoring_data = [
+        ["VirusTotal", "0 malicious engines", "No Risk"],
+        ["", "1-2 malicious engines", "Low"],
+        ["", "3-5 malicious engines", "Medium"],
+        ["", "6+ malicious engines", "High"],
+        ["AbuseIPDB", "Abuse Confidence Score = 0", "No Risk"],
+        ["", "Abuse Confidence Score 1-24", "Low"],
+        ["", "Abuse Confidence Score 25-74", "Medium"],
+        ["", "Abuse Confidence Score 75-100", "High"],
+        ["SSLyze (weakest TLS/SSL\naccepted on port 443)", "Weakest = TLS 1.2 or TLS 1.3", "No Risk"],
+        ["", "Weakest = SSL 2.0 / SSL 3.0 / TLS 1.0 / TLS 1.1", "Medium"],
+        ["WHOIS (domain age)", "Age >= 30 days", "No Risk"],
+        ["", "Age < 30 days", "Low"],
+        ["", "Bare-IP input", "Skipped (not scored)"],
+    ]
+
+    story.append(_make_wrapped_table(["Source", "Condition", "Risk Level"], scoring_data, [140, 220, 80]))
 
     doc.build(story, onFirstPage=_header_footer, onLaterPages=_header_footer)
     return pdf_buffer.getvalue()

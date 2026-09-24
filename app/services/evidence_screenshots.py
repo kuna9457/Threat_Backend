@@ -540,27 +540,20 @@ def generate_abuseipdb_screenshot(ip: str, abuse_data: dict) -> bytes:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def generate_evidence_screenshots(url: str, scan_data: dict) -> dict:
-    vt_data     = scan_data.get("data", {}).get("virustotal", {})
-    is_phishing = scan_data.get("data", {}).get("phishing", False)
-    ssl_data    = scan_data.get("data", {}).get("ssl_labs", {})
-    abuse_data  = scan_data.get("data", {}).get("abuseipdb", {})
-    ip_addr     = abuse_data.get('ip') or ssl_data.get('ip_address') or 'Unknown IP'
+    # Only VirusTotal and AbuseIPDB evidence is rendered into the report —
+    # Google Safe Browsing / SSL Labs screenshots aren't generated since
+    # those sources (and the old SSL Labs check) are no longer part of the
+    # risk.md report. generate_google_safe_browsing_screenshot() and
+    # generate_ssllabs_screenshot() are kept below, just unused here.
+    vt_data    = scan_data.get("data", {}).get("virustotal", {})
+    abuse_data = scan_data.get("data", {}).get("abuseipdb", {})
+    ip_addr    = abuse_data.get('ip') or 'Unknown IP'
 
     screenshots = {}
     try:
         screenshots["virustotal"] = generate_virustotal_screenshot(url, vt_data)
     except Exception as e:
         print(f"[Evidence] VT failed for {url}: {e}")
-
-    try:
-        screenshots["google_safe_browsing"] = generate_google_safe_browsing_screenshot(url, is_phishing)
-    except Exception as e:
-        print(f"[Evidence] GSB failed for {url}: {e}")
-
-    try:
-        screenshots["ssllabs"] = generate_ssllabs_screenshot(url, ssl_data)
-    except Exception as e:
-        print(f"[Evidence] SSL failed for {url}: {e}")
 
     try:
         if abuse_data:

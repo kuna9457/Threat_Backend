@@ -13,6 +13,7 @@ _shared_datas = [
     ('app/services/icici_logo_transparent.png', 'app/services'),
     ('.env', '.'),
     ('version.ini', '.'),
+    ('assets/fonts/Mulish.ttf', 'assets/fonts'),
 ]
 
 _shared_hiddenimports = [

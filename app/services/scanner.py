@@ -2,13 +2,18 @@ from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from app.services.virustotal import check_virustotal
 from app.services.google_safe import check_google_safe
-from app.utils.whois_lookup import get_domain_age
-from app.core.risk_engine import calculate_score
+from app.utils.whois_lookup import get_whois_info
+from app.core.risk_engine import calculate_score, calculate_risk_levels
 from app.core.policy_engine import decide_verdict
 from app.services.urlscan_service import check_urlscan
 from app.services.abuseipdb_service import check_abuseipdb
-from app.services.ssl_labs_service import check_ssl_labs
+from app.services.sslyze_service import check_sslyze
 from app.cache.memory_cache import get_cache, set_cache
+
+# Note: app/services/ssl_labs_service.py (Qualys SSL Labs API) is kept in the
+# codebase but no longer wired into the scan pipeline — SSLyze now covers the
+# TLS/SSL protocol check locally, without SSL Labs' slow (up to 180s) remote
+# assessment queue, and per risk.md only SSLyze is part of the risk model.
 
 # Each source hits a different, independent third-party API — safe to run
 # concurrently. This pool is shared across every URL being scanned at once,
@@ -29,17 +34,22 @@ def scan_url_service(url: str):
     futures = {
         "virustotal": _SOURCE_EXECUTOR.submit(check_virustotal, url),
         "phishing": _SOURCE_EXECUTOR.submit(check_google_safe, url),
-        "domain_age": _SOURCE_EXECUTOR.submit(get_domain_age, url),
+        "whois": _SOURCE_EXECUTOR.submit(get_whois_info, url),
         "urlscan": _SOURCE_EXECUTOR.submit(check_urlscan, url),
         "abuseipdb": _SOURCE_EXECUTOR.submit(check_abuseipdb, url),
-        "ssl_labs": _SOURCE_EXECUTOR.submit(check_ssl_labs, url),
+        "sslyze": _SOURCE_EXECUTOR.submit(check_sslyze, url),
     }
     vt_data = futures["virustotal"].result()
     phishing = futures["phishing"].result()
-    domain_age = futures["domain_age"].result()
+    whois_info = futures["whois"].result()
     urlscan_data = futures["urlscan"].result()
     abuseipdb_data = futures["abuseipdb"].result()
-    ssl_data = futures["ssl_labs"].result()
+    sslyze_data = futures["sslyze"].result()
+
+    # Legacy plain-int domain age, kept for older consumers (e.g. the
+    # inherent/residual "exception risk" assessment flow) that expect a
+    # number rather than the richer {age_days, is_ip, error} shape.
+    domain_age = whois_info["age_days"] if whois_info.get("age_days") is not None else 3650
 
     # Build the data block — keep legacy keys for risk engine compatibility
     data = {
@@ -52,17 +62,22 @@ def scan_url_service(url: str):
         "urlscan": urlscan_data,
         "abuseipdb": abuseipdb_data,
         # New integrations
-        "ssl_labs": ssl_data,
+        "sslyze": sslyze_data,
+        "whois": whois_info,
     }
 
     score, score_breakdown = calculate_score(data)
     verdict = decide_verdict(score)
+    risk_assessment = calculate_risk_levels(data)
 
     result = {
         "url": url,
         "score": score,
         "score_breakdown": score_breakdown,
         "verdict": verdict,
+        "risk_sources": risk_assessment["sources"],
+        "final_risk_level": risk_assessment["final_level"],
+        "risk_remarks": risk_assessment["remarks"],
         "data": data,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

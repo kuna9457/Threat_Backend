@@ -1,3 +1,150 @@
+# ── New risk methodology (see risk.md) ──────────────────────────────────
+#
+# Final_Risk_Level is the WORST level among whichever of these four sources
+# returned a usable result for the entry:
+#   - VirusTotal   : malicious-engine count out of total engines
+#   - AbuseIPDB    : abuse confidence score (0-100) for the resolved IP
+#   - SSLyze       : weakest TLS/SSL protocol still accepted on port 443,
+#                    found by a real local SSLyze scan (app/services/sslyze_service.py)
+#   - WHOIS        : domain age in days (skipped for bare-IP targets)
+#
+# Google Safe Browsing and URLScan.io keep running (their data is still
+# collected and cached) but are intentionally excluded from this
+# methodology and from the report/UI it drives.
+
+_LEVEL_ORDER = {"No Risk": 0, "Low": 1, "Medium": 2, "High": 3}
+
+_TLS_PROTOCOL_ORDER = {
+    "SSL 2.0": 0, "SSL 3.0": 1, "TLS 1.0": 2, "TLS 1.1": 3, "TLS 1.2": 4, "TLS 1.3": 5,
+}
+
+_WEAK_TLS_PROTOCOLS = {"SSL 2.0", "SSL 3.0", "TLS 1.0", "TLS 1.1"}
+
+
+def _score_virustotal(vt: dict) -> dict:
+    if not vt or "error" in vt:
+        return {"usable": False, "level": None, "detail": vt.get("error", "No result") if vt else "No result"}
+
+    malicious = vt.get("malicious", 0)
+    total = malicious + vt.get("suspicious", 0) + vt.get("harmless", 0) + vt.get("undetected", 0) + vt.get("timeout", 0)
+
+    if malicious == 0:
+        level = "No Risk"
+    elif malicious <= 2:
+        level = "Low"
+    elif malicious <= 5:
+        level = "Medium"
+    else:
+        level = "High"
+
+    return {"usable": True, "level": level, "detail": f"{malicious}/{total}"}
+
+
+def _score_abuseipdb(abuse: dict) -> dict:
+    if not abuse or "error" in abuse:
+        return {"usable": False, "level": None, "detail": abuse.get("error", "No result") if abuse else "No result"}
+
+    conf = abuse.get("abuseConfidenceScore", 0)
+    if conf == 0:
+        level = "No Risk"
+    elif conf <= 24:
+        level = "Low"
+    elif conf <= 74:
+        level = "Medium"
+    else:
+        level = "High"
+
+    return {"usable": True, "level": level, "detail": f"{conf}%"}
+
+
+def _weakest_tls_protocol(protocols: list[dict]) -> str | None:
+    weakest = None
+    weakest_rank = None
+    for p in protocols:
+        name = (p.get("name") or "").strip()
+        version = (p.get("version") or "").strip()
+        label = f"{name} {version}".strip()
+        rank = _TLS_PROTOCOL_ORDER.get(label)
+        if rank is None:
+            continue
+        if weakest_rank is None or rank < weakest_rank:
+            weakest_rank = rank
+            weakest = label
+    return weakest
+
+
+def _score_sslyze(sslyze: dict) -> dict:
+    if not sslyze or sslyze.get("error"):
+        return {"usable": False, "level": None, "detail": sslyze.get("error", "No result") if sslyze else "No result"}
+
+    protocols = sslyze.get("protocols", [])
+    weakest = _weakest_tls_protocol(protocols)
+    if weakest is None:
+        return {"usable": False, "level": None, "detail": "No recognised TLS/SSL protocols reported"}
+
+    level = "Medium" if weakest in _WEAK_TLS_PROTOCOLS else "No Risk"
+    return {"usable": True, "level": level, "detail": f"Weakest enabled: {weakest}"}
+
+
+def _score_whois(whois_info: dict) -> dict:
+    if not whois_info:
+        return {"usable": False, "level": None, "detail": "No result"}
+
+    if whois_info.get("is_ip"):
+        return {"usable": False, "level": None, "detail": "Bare-IP input — WHOIS not applicable"}
+
+    if whois_info.get("error") or whois_info.get("age_days") is None:
+        return {"usable": False, "level": None, "detail": whois_info.get("error") or "Domain age unknown"}
+
+    age = whois_info["age_days"]
+    level = "No Risk" if age >= 30 else "Low"
+    return {"usable": True, "level": level, "detail": f"{age} days"}
+
+
+def calculate_risk_levels(data: dict) -> dict:
+    """
+    Implements the risk.md methodology: per-source No Risk/Low/Medium/High
+    levels for VirusTotal, AbuseIPDB, SSLyze (weakest TLS protocol via SSL
+    Labs) and WHOIS, and a Final_Risk_Level that is the worst of whichever
+    sources returned a usable result.
+    """
+    sources = {
+        "VirusTotal": _score_virustotal(data.get("virustotal", {})),
+        "AbuseIPDB": _score_abuseipdb(data.get("abuseipdb", {})),
+        "SSLyze": _score_sslyze(data.get("sslyze", {})),
+        "WHOIS": _score_whois(data.get("whois", {})),
+    }
+
+    usable_levels = [s["level"] for s in sources.values() if s["usable"]]
+
+    if not usable_levels:
+        final_level = "Unknown"
+    else:
+        final_level = max(usable_levels, key=lambda l: _LEVEL_ORDER[l])
+
+    used = [name for name, s in sources.items() if s["usable"]]
+    # WHOIS/domain-age failures (or bare-IP skips) are silently excluded —
+    # they shouldn't clutter the report with lookup-error noise, only the
+    # sources that actually give a usable signal are called out.
+    errors = [
+        f"{name}: {s['detail']}"
+        for name, s in sources.items()
+        if not s["usable"] and name != "WHOIS"
+    ]
+
+    remarks_parts = []
+    remarks_parts.append(f"Based on: {', '.join(used)}" if used else "No source returned a usable result")
+    if errors:
+        remarks_parts.append("; ".join(errors))
+    remarks = " — ".join(remarks_parts)
+
+    return {
+        "sources": sources,
+        "final_level": final_level,
+        "remarks": remarks,
+    }
+
+
 def calculate_score(data: dict):
     score = 0
     breakdown = {}

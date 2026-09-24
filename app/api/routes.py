@@ -20,6 +20,7 @@ class ReportRequest(BaseModel):
     app_name: str | None = None
     can_id: str | None = None
     server_ip: str | None = None
+    request_id: str | None = None
 
 
 @router.post("/scan-url")
@@ -59,7 +60,8 @@ def download_pdf_report(request: ReportRequest):
         request.final_comment,
         request.app_name,
         request.can_id,
-        request.server_ip
+        request.server_ip,
+        request.request_id
     )
 
     return StreamingResponse(
