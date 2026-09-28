@@ -3,7 +3,6 @@ import io
 import os
 from io import BytesIO
 from datetime import datetime
-import urllib.request
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
@@ -15,51 +14,10 @@ from reportlab.platypus.flowables import HRFlowable
 from PIL import Image as PILImage
 from app.services.evidence_screenshots import generate_evidence_screenshots
 
-# ── WelthWest Brand ──────────────────────────────────────────────────────────
-WW_NAVY = colors.HexColor("#0A1930")
-WW_TEAL = colors.HexColor("#0FA593")  # slightly deepened for print contrast
-WW_LOGO_PATH = os.path.join(os.path.dirname(__file__), "welthwest_logo.png")
+# ── ICICI Bank Brand ──────────────────────────────────────────────────────────
+ICICI_NAVY   = colors.HexColor("#1C3E73")
+ICICI_ORANGE = colors.HexColor("#F37224")
 
-
-def _header_footer(canvas, doc):
-    """Draws the WelthWest brand strip (logo + name) and footer on every page."""
-    canvas.saveState()
-    width, height = A4
-
-    # Header logo + wordmark
-    try:
-        canvas.drawImage(
-            WW_LOGO_PATH, 20 * mm, height - 18 * mm,
-            width=9 * mm, height=9 * mm, mask="auto", preserveAspectRatio=True,
-        )
-    except Exception:
-        pass
-    canvas.setFont("Helvetica-Bold", 10)
-    canvas.setFillColor(WW_NAVY)
-    canvas.drawString(31 * mm, height - 13 * mm, "WelthWest")
-    canvas.setFont("Helvetica", 7)
-    canvas.setFillColor(colors.HexColor("#64748B"))
-    canvas.drawString(31 * mm, height - 17 * mm, "Cyber Threat Intelligence Platform")
-
-    canvas.setFont("Helvetica-Bold", 7)
-    canvas.setFillColor(colors.HexColor("#94A3B8"))
-    canvas.drawRightString(width - 20 * mm, height - 13 * mm, "CONFIDENTIAL")
-
-    canvas.setStrokeColor(WW_TEAL)
-    canvas.setLineWidth(0.8)
-    canvas.line(20 * mm, height - 20 * mm, width - 20 * mm, height - 20 * mm)
-
-    # Footer
-    canvas.setStrokeColor(colors.HexColor("#E2E8F0"))
-    canvas.setLineWidth(0.5)
-    canvas.line(20 * mm, 16 * mm, width - 20 * mm, 16 * mm)
-    canvas.setFont("Helvetica", 7)
-    canvas.setFillColor(colors.HexColor("#94A3B8"))
-    canvas.drawString(20 * mm, 11 * mm, "WelthWest — Confidential, For Internal Use Only")
-    canvas.drawCentredString(width / 2, 11 * mm, f"Page {doc.page}")
-    canvas.drawRightString(width - 20 * mm, 11 * mm, datetime.utcnow().strftime("%Y-%m-%d"))
-
-    canvas.restoreState()
 
 def _make_rl_image(img_buffer, target_width_mm):
     img_buffer.seek(0)
@@ -112,9 +70,9 @@ def _risk_assessment_summary(results: list) -> str:
 
 
 _RISK_COLORS = {
-    "High": colors.HexColor("#DC2626"),
-    "Medium": colors.HexColor("#D97706"),
-    "Low": colors.HexColor("#2563EB"),
+    "High":    colors.HexColor("#DC2626"),
+    "Medium":  colors.HexColor("#D97706"),
+    "Low":     colors.HexColor("#2563EB"),
     "No Risk": colors.HexColor("#059669"),
     "Unknown": colors.HexColor("#6B7280"),
 }
@@ -125,21 +83,21 @@ def _make_summary_table(data: list[list[str]]) -> Table:
     level text for row i."""
     t = Table(data, colWidths=[20*mm, 110*mm, 40*mm], hAlign="LEFT", repeatRows=1)
     style = [
-        ("BACKGROUND", (0, 0), (-1, 0), WW_NAVY),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 10),
-        ("TEXTCOLOR", (0, 1), (-1, -1), colors.HexColor("#1F2937")),
-        ("TEXTCOLOR", (1, 1), (1, -1), colors.HexColor("#1D4ED8")),  # URL in blue
-        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-        ("FONTNAME", (-1, 1), (-1, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 1), (-1, -1), 10),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7de")),
+        ("BACKGROUND", (0, 0), (-1, 0), ICICI_NAVY),
+        ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",   (0, 0), (-1, 0), 10),
+        ("TEXTCOLOR",  (0, 1), (-1, -1), colors.HexColor("#1F2937")),
+        ("TEXTCOLOR",  (1, 1), (1, -1), colors.HexColor("#1D4ED8")),  # URL in blue
+        ("FONTNAME",   (0, 1), (-1, -1), "Helvetica"),
+        ("FONTNAME",   (-1, 1), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE",   (0, 1), (-1, -1), 10),
+        ("GRID",       (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7de")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f6f8fa")]),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
     ]
     for row_idx, row in enumerate(data[1:], start=1):
         risk_color = _RISK_COLORS.get(row[-1])
@@ -151,36 +109,36 @@ def _make_summary_table(data: list[list[str]]) -> Table:
 def _make_table(data: list[list[str]]) -> Table:
     t = Table(data, hAlign="LEFT", repeatRows=1)
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), WW_NAVY),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 8),
-        ("FONTSIZE", (0, 1), (-1, -1), 8),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d7de")),
+        ("BACKGROUND", (0, 0), (-1, 0), ICICI_NAVY),
+        ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",   (0, 0), (-1, 0), 8),
+        ("FONTSIZE",   (0, 1), (-1, -1), 8),
+        ("GRID",       (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d7de")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f6f8fa")]),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
     ]))
     return t
 
 def _make_kv_table(data: list[list[str]]) -> Table:
     t = Table(data, colWidths=[150, 310], hAlign="LEFT", repeatRows=1)
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), WW_NAVY),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 8),
-        ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 1), (-1, -1), 8),
-        ("TEXTCOLOR", (0, 1), (0, -1), colors.HexColor("#333333")),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d7de")),
+        ("BACKGROUND", (0, 0), (-1, 0), ICICI_NAVY),
+        ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",   (0, 0), (-1, 0), 8),
+        ("FONTNAME",   (0, 1), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE",   (0, 1), (-1, -1), 8),
+        ("TEXTCOLOR",  (0, 1), (0, -1), colors.HexColor("#333333")),
+        ("GRID",       (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d7de")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f6f8fa")]),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
     ]))
     return t
 
@@ -189,22 +147,23 @@ def _make_wrapped_table(header: list[str], rows: list[list], col_widths: list) -
     from reportlab.platypus import Paragraph as _P
     styles = getSampleStyleSheet()
     head_style = ParagraphStyle("WH", parent=styles["Normal"], fontSize=7, leading=9,
-                                 fontName="Helvetica-Bold", textColor=colors.white)
+                                fontName="Helvetica-Bold", textColor=colors.white)
     cell_style = ParagraphStyle("WC", parent=styles["Normal"], fontSize=7, leading=9)
     data = [[_P(_esc(h), head_style) for h in header]]
     for row in rows:
         data.append([_P(_esc(v), cell_style) for v in row])
     t = Table(data, colWidths=col_widths, hAlign="LEFT", repeatRows=1)
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), WW_NAVY),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d7de")),
+        ("BACKGROUND", (0, 0), (-1, 0), ICICI_NAVY),
+        ("GRID",       (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d7de")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f6f8fa")]),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
     ]))
     return t
+
 
 def generate_pdf_report(
     results: list,
@@ -220,31 +179,31 @@ def generate_pdf_report(
         pagesize=A4,
         rightMargin=20 * mm,
         leftMargin=20 * mm,
-        topMargin=28 * mm,
+        topMargin=20 * mm,
         bottomMargin=20 * mm,
     )
     styles = getSampleStyleSheet()
 
-    # Custom Styles
+    # ── Custom Styles (ICICI Bank palette) ───────────────────────────────────
     cover_bank = ParagraphStyle(
         "CoverBank", parent=styles["Title"],
-        fontSize=30, fontName="Helvetica-Bold", alignment=1, spaceAfter=4, textColor=WW_NAVY
-    )
-    cover_subtitle = ParagraphStyle(
-        "CoverSubtitle", parent=styles["Normal"],
-        fontSize=11, fontName="Helvetica", alignment=1, spaceAfter=20, textColor=colors.HexColor("#64748B")
+        fontSize=30, fontName="Helvetica-Bold", alignment=1, spaceAfter=10,
+        textColor=ICICI_NAVY
     )
     cover_title = ParagraphStyle(
         "CoverTitle", parent=styles["Title"],
-        fontSize=24, fontName="Helvetica-Bold", alignment=1, spaceAfter=20, textColor=colors.black
+        fontSize=24, fontName="Helvetica-Bold", alignment=1, spaceAfter=20,
+        textColor=colors.black
     )
     heading_style = ParagraphStyle(
         "Heading", parent=styles["Heading2"],
-        fontSize=13, fontName="Helvetica-Bold", spaceBefore=14, spaceAfter=8, textColor=WW_NAVY
+        fontSize=13, fontName="Helvetica-Bold", spaceBefore=14, spaceAfter=8,
+        textColor=ICICI_NAVY
     )
     subheading_style = ParagraphStyle(
         "SubHeading", parent=styles["Heading3"],
-        fontSize=11, fontName="Helvetica-Bold", spaceBefore=12, spaceAfter=6, textColor=WW_TEAL
+        fontSize=11, fontName="Helvetica-Bold", spaceBefore=12, spaceAfter=6,
+        textColor=ICICI_ORANGE
     )
     from reportlab.lib.enums import TA_JUSTIFY
     body_style = ParagraphStyle(
@@ -257,28 +216,26 @@ def generate_pdf_report(
     )
     note_style = ParagraphStyle(
         "Note", parent=styles["Normal"],
-        fontSize=9, fontName="Helvetica-Oblique", spaceAfter=6, leading=12, textColor=colors.HexColor("#6B7280")
+        fontSize=9, fontName="Helvetica-Oblique", spaceAfter=6, leading=12,
+        textColor=colors.HexColor("#6B7280")
     )
 
     story = []
 
     # ── PAGE 1: COVER ──────────────────────────────────────────────────────
-    story.append(Spacer(1, 30 * mm))
+    story.append(Spacer(1, 40 * mm))
 
-    # WelthWest company logo
+    # ICICI Bank logo
     try:
-        with open(WW_LOGO_PATH, 'rb') as f:
+        logo_path = os.path.join(os.path.dirname(__file__), "icici_logo_transparent.png")
+        with open(logo_path, "rb") as f:
             logo_data = f.read()
-        logo_img = _make_rl_image(BytesIO(logo_data), target_width_mm=42)
-        logo_img.hAlign = "CENTER"
-        story.append(logo_img)
+        story.append(_make_rl_image(BytesIO(logo_data), target_width_mm=60))
     except Exception:
-        story.append(Paragraph("[WELTHWEST LOGO]", cover_bank))
+        story.append(Paragraph("[ICICI BANK LOGO]", cover_bank))
 
-    story.append(Spacer(1, 8 * mm))
-    story.append(Paragraph("WELTHWEST", cover_bank))
-    story.append(Spacer(1, 3 * mm))
-    story.append(Paragraph("Cyber Threat Intelligence Platform", cover_subtitle))
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("ICICI BANK LIMITED", cover_bank))
     story.append(Paragraph("URL Risk Assessment", cover_title))
     story.append(PageBreak())
 
@@ -291,9 +248,9 @@ def generate_pdf_report(
     if app_name or can_id or server_ip or request_id:
         story.append(Paragraph("Application Details:", heading_style))
         app_rows = [["Detail", "Value"]]
-        if app_name: app_rows.append(["App Name", app_name])
-        if can_id: app_rows.append(["Can ID", can_id])
-        if server_ip: app_rows.append(["Server IP", server_ip])
+        if app_name:   app_rows.append(["App Name",   app_name])
+        if can_id:     app_rows.append(["Can ID",     can_id])
+        if server_ip:  app_rows.append(["Server IP",  server_ip])
         if request_id: app_rows.append(["Request Id", request_id])
         story.append(_make_kv_table(app_rows))
         story.append(Spacer(1, 15))
@@ -310,7 +267,6 @@ def generate_pdf_report(
     summary_data = [[Paragraph(h, summary_header_style) for h in ["SR. No.", "URL", "Final Risk Level"]]]
     for idx, res in enumerate(results, 1):
         risk_level = res.get("final_risk_level", "Unknown")
-
         summary_data.append([
             str(idx),
             Paragraph(_esc(res.get("url", "")), summary_cell_style),
@@ -322,15 +278,15 @@ def generate_pdf_report(
     for idx, res in enumerate(results, 1):
         story.append(PageBreak())
 
-        url = res.get("url", "")
+        url        = res.get("url", "")
         data_block = res.get("data", {})
-        vt = data_block.get("virustotal", {})
-        abuseipdb = data_block.get("abuseipdb", {})
-        sslyze = data_block.get("sslyze", {})
+        vt         = data_block.get("virustotal", {})
+        abuseipdb  = data_block.get("abuseipdb", {})
+        sslyze     = data_block.get("sslyze", {})
 
         # URL Header
         story.append(Paragraph(f"<b>{idx} — {_esc(_trunc(url, 65))}</b>", heading_style))
-        story.append(HRFlowable(width="100%", thickness=1, color=WW_TEAL, spaceAfter=10))
+        story.append(HRFlowable(width="100%", thickness=1, color=ICICI_ORANGE, spaceAfter=10))
 
         # Generate Evidence
         try:
@@ -339,12 +295,12 @@ def generate_pdf_report(
             evidence = {}
 
         risk_sources = res.get("risk_sources", {})
-        final_level = res.get("final_risk_level", "Unknown")
-        remarks = res.get("risk_remarks", "")
+        final_level  = res.get("final_risk_level", "Unknown")
+        remarks      = res.get("risk_remarks", "")
 
         def _src_level(name):
-            s = risk_sources.get(name, {})
-            level = s.get("level")
+            s      = risk_sources.get(name, {})
+            level  = s.get("level")
             detail = _trunc(s.get("detail", ""), 150)
             if level:
                 return f"{level} ({detail})" if detail else level
@@ -365,18 +321,18 @@ def generate_pdf_report(
 
         vt_rows = [
             ["Metric", "Value"],
-            ["Risk Level", _src_level("VirusTotal")],
+            ["Risk Level",        _src_level("VirusTotal")],
             ["Malicious Engines", str(vt.get("malicious", 0))],
-            ["Suspicious Engines", str(vt.get("suspicious", 0))],
-            ["Harmless Engines", str(vt.get("harmless", 0))],
-            ["Undetected", str(vt.get("undetected", 0))],
-            ["Page Title", _trunc(str(vt.get("title", "—")), 60)],
-            ["Final URL", _trunc(str(vt.get("final_url", "—")), 60)],
-            ["HTTP Status", str(vt.get("last_http_response_code", "—"))],
-            ["Times Submitted", str(vt.get("times_submitted", 0))],
-            ["Tags", _trunc(", ".join(vt.get("tags", [])) or "None", 60)],
-            ["Reputation", str(vt.get("reputation", "N/A"))],
-            ["Data Source", "Live VirusTotal API" if not vt.get("mock") else "Mock (no API key configured)"],
+            ["Suspicious Engines",str(vt.get("suspicious", 0))],
+            ["Harmless Engines",  str(vt.get("harmless", 0))],
+            ["Undetected",        str(vt.get("undetected", 0))],
+            ["Page Title",        _trunc(str(vt.get("title", "—")), 60)],
+            ["Final URL",         _trunc(str(vt.get("final_url", "—")), 60)],
+            ["HTTP Status",       str(vt.get("last_http_response_code", "—"))],
+            ["Times Submitted",   str(vt.get("times_submitted", 0))],
+            ["Tags",              _trunc(", ".join(vt.get("tags", [])) or "None", 60)],
+            ["Reputation",        str(vt.get("reputation", "N/A"))],
+            ["Data Source",       "Live VirusTotal API" if not vt.get("mock") else "Mock (no API key configured)"],
         ]
         vt_block.append(_make_kv_table(vt_rows))
         story.append(KeepTogether(vt_block))
@@ -422,12 +378,12 @@ def generate_pdf_report(
                 ab_block.append(Spacer(1, 10))
             ab_rows = [
                 ["Metric", "Value"],
-                ["Risk Level", _src_level("AbuseIPDB")],
-                ["Abuse Confidence", f"{abuseipdb.get('abuseConfidenceScore', 0)}%"],
-                ["Total Reports", str(abuseipdb.get("totalReports", 0))],
-                ["Usage Type", str(abuseipdb.get("usageType", "Unknown"))],
-                ["ISP", str(abuseipdb.get("isp", "—"))],
-                ["Country", str(abuseipdb.get("countryCode", "—"))],
+                ["Risk Level",        _src_level("AbuseIPDB")],
+                ["Abuse Confidence",  f"{abuseipdb.get('abuseConfidenceScore', 0)}%"],
+                ["Total Reports",     str(abuseipdb.get("totalReports", 0))],
+                ["Usage Type",        str(abuseipdb.get("usageType", "Unknown"))],
+                ["ISP",               str(abuseipdb.get("isp", "—"))],
+                ["Country",           str(abuseipdb.get("countryCode", "—"))],
             ]
             ab_block.append(_make_kv_table(ab_rows))
             story.append(KeepTogether(ab_block))
@@ -439,16 +395,18 @@ def generate_pdf_report(
                 ssl_block.append(_make_kv_table([
                     ["Metric", "Value"],
                     ["Risk Level", _src_level("SSLyze")],
-                    ["Error", sslyze["error"]],
+                    ["Error",      sslyze["error"]],
                 ]))
             else:
                 protocols = sslyze.get("protocols", [])
                 ssl_block.append(_make_kv_table([
                     ["Metric", "Value"],
                     ["Risk Level", _src_level("SSLyze")],
-                    ["Host", sslyze.get("host", "—")],
-                    ["Port", str(sslyze.get("port", 443))],
-                    ["Accepted Protocols", ", ".join(f"{p.get('name')} {p.get('version')}" for p in protocols) or "None detected"],
+                    ["Host",       sslyze.get("host", "—")],
+                    ["Port",       str(sslyze.get("port", 443))],
+                    ["Accepted Protocols", ", ".join(
+                        f"{p.get('name')} {p.get('version')}" for p in protocols
+                    ) or "None detected"],
                 ]))
             story.append(KeepTogether(ssl_block))
 
@@ -462,8 +420,8 @@ def generate_pdf_report(
                 Paragraph("WHOIS — Domain Age", subheading_style),
                 _make_kv_table([
                     ["Metric", "Value"],
-                    ["Risk Level", _src_level("WHOIS")],
-                    ["Domain Age", f"{whois_info.get('age_days')} days"],
+                    ["Risk Level",  _src_level("WHOIS")],
+                    ["Domain Age",  f"{whois_info.get('age_days')} days"],
                 ]),
             ]
             story.append(KeepTogether(whois_block))
@@ -471,39 +429,39 @@ def generate_pdf_report(
     # ── LAST PAGE: COMMENTS ────────────────────────────────────────────────
     story.append(PageBreak())
     story.append(Paragraph("Assessment Comments", heading_style))
-    story.append(HRFlowable(width="100%", thickness=1, color=WW_TEAL, spaceAfter=15))
+    story.append(HRFlowable(width="100%", thickness=1, color=ICICI_ORANGE, spaceAfter=15))
 
     story.append(Paragraph("Consolidated Risk Overview", subheading_style))
     cons_head_style = ParagraphStyle("ConsHead", parent=styles["Normal"], fontSize=7, leading=9,
-                                      fontName="Helvetica-Bold", textColor=colors.white)
-    cons_url_style = ParagraphStyle("ConsUrl", parent=styles["Normal"], fontSize=7, leading=9, wordWrap="CJK")
+                                     fontName="Helvetica-Bold", textColor=colors.white)
+    cons_url_style  = ParagraphStyle("ConsUrl",  parent=styles["Normal"], fontSize=7, leading=9, wordWrap="CJK")
     cons_cell_style = ParagraphStyle("ConsCell", parent=styles["Normal"], fontSize=7, leading=9)
 
     consolidated_data = [[Paragraph(h, cons_head_style) for h in ["URL", "Final Risk Level", "Per-Source Risk Level"]]]
     for res in results:
-        url = res.get("url", "")
+        url         = res.get("url", "")
         final_level = res.get("final_risk_level", "Unknown")
-        rs = res.get("risk_sources", {})
-        per_source = ", ".join(
+        rs          = res.get("risk_sources", {})
+        per_source  = ", ".join(
             f"{name}: {s.get('level') or 'N/A'}" for name, s in rs.items()
         ) if rs else "None"
 
         consolidated_data.append([
-            Paragraph(_esc(url), cons_url_style),
+            Paragraph(_esc(url),         cons_url_style),
             Paragraph(_esc(final_level), cons_cell_style),
-            Paragraph(_esc(per_source), cons_cell_style),
+            Paragraph(_esc(per_source),  cons_cell_style),
         ])
 
     if len(consolidated_data) > 1:
         cons_table = Table(consolidated_data, colWidths=[130, 80, 260], hAlign="LEFT", repeatRows=1)
         cons_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1C3E73")),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d7de")),
+            ("BACKGROUND", (0, 0), (-1, 0), ICICI_NAVY),
+            ("GRID",       (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d7de")),
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f6f8fa")]),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 3),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 5),
         ]))
         story.append(cons_table)
         story.append(Spacer(1, 15))
@@ -513,7 +471,7 @@ def generate_pdf_report(
     if final_comment.strip():
         story.append(Paragraph(_esc(final_comment), body_style))
 
-    # ── LAST PAGE: RISK SCORING METHODOLOGY ─────────────────────────────────
+    # ── LAST PAGE: RISK SCORING METHODOLOGY ──────────────────────────────────
     story.append(PageBreak())
     story.append(Paragraph("Risk Scoring Methodology", heading_style))
     story.append(Paragraph(
@@ -527,22 +485,23 @@ def generate_pdf_report(
     ))
 
     scoring_data = [
-        ["VirusTotal", "0 malicious engines", "No Risk"],
-        ["", "1-2 malicious engines", "Low"],
-        ["", "3-5 malicious engines", "Medium"],
-        ["", "6+ malicious engines", "High"],
-        ["AbuseIPDB", "Abuse Confidence Score = 0", "No Risk"],
-        ["", "Abuse Confidence Score 1-24", "Low"],
-        ["", "Abuse Confidence Score 25-74", "Medium"],
-        ["", "Abuse Confidence Score 75-100", "High"],
-        ["SSLyze (weakest TLS/SSL\naccepted on port 443)", "Weakest = TLS 1.2 or TLS 1.3", "No Risk"],
-        ["", "Weakest = SSL 2.0 / SSL 3.0 / TLS 1.0 / TLS 1.1", "Medium"],
-        ["WHOIS (domain age)", "Age >= 30 days", "No Risk"],
-        ["", "Age < 30 days", "Low"],
-        ["", "Bare-IP input", "Skipped (not scored)"],
+        ["VirusTotal",  "0 malicious engines",                            "No Risk"],
+        ["",            "1-2 malicious engines",                          "Low"],
+        ["",            "3-5 malicious engines",                          "Medium"],
+        ["",            "6+ malicious engines",                           "High"],
+        ["AbuseIPDB",   "Abuse Confidence Score = 0",                     "No Risk"],
+        ["",            "Abuse Confidence Score 1-24",                    "Low"],
+        ["",            "Abuse Confidence Score 25-74",                   "Medium"],
+        ["",            "Abuse Confidence Score 75-100",                  "High"],
+        ["SSLyze (weakest TLS/SSL\naccepted on port 443)",
+                        "Weakest = TLS 1.2 or TLS 1.3",                  "No Risk"],
+        ["",            "Weakest = SSL 2.0 / SSL 3.0 / TLS 1.0 / TLS 1.1", "Medium"],
+        ["WHOIS (domain age)", "Age >= 30 days",                          "No Risk"],
+        ["",            "Age < 30 days",                                  "Low"],
+        ["",            "Bare-IP input",                                  "Skipped (not scored)"],
     ]
 
     story.append(_make_wrapped_table(["Source", "Condition", "Risk Level"], scoring_data, [140, 220, 80]))
 
-    doc.build(story, onFirstPage=_header_footer, onLaterPages=_header_footer)
+    doc.build(story)
     return pdf_buffer.getvalue()
