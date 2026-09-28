@@ -1,9 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+from dotenv import load_dotenv
+
+# Load environment variables from .env file into os.environ early
+load_dotenv()
+
 from app.api.routes import router
 from app.api.risk_routes import router as risk_router
 from app.api.email_routes import router as email_router
-import uvicorn
 
 app = FastAPI(title="URL Threat Intelligence Platform")
 
